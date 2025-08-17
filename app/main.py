@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 import os
+import threading
 
 from . import models, schemas
 from .database import SessionLocal, engine
@@ -17,6 +18,20 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def send_email(to_email: str, subject: str, body: str) -> None:
+    """Placeholder email sender."""
+    print(f"Sending email to {to_email}: {subject}")
+
+
+def schedule_campaign(to_email: str, touchpoints: list[dict]) -> None:
+    """Schedule campaign touchpoints using timers."""
+    for tp in sorted(touchpoints, key=lambda x: x["delay_seconds"]):
+        timer = threading.Timer(
+            tp["delay_seconds"], send_email, args=[to_email, tp["subject"], tp["body"]]
+        )
+        timer.start()
 
 
 @app.post("/contacts", response_model=schemas.Contact)
@@ -38,6 +53,18 @@ def list_contacts(source_type: str | None = None, marketing_intent: str | None =
     return query.all()
 
 
+@app.post("/campaigns", response_model=schemas.Campaign)
+def create_campaign(campaign: schemas.CampaignCreate, db: Session = Depends(get_db)):
+    db_campaign = models.Campaign(name=campaign.name)
+    db_campaign.touchpoints = [
+        models.CampaignTouchpoint(**tp.dict()) for tp in campaign.touchpoints
+    ]
+    db.add(db_campaign)
+    db.commit()
+    db.refresh(db_campaign)
+    return db_campaign
+
+
 @app.post("/auto-responder/{contact_id}")
 def send_auto_response(contact_id: int, db: Session = Depends(get_db)):
     contact = db.get(models.Contact, contact_id)
@@ -45,6 +72,35 @@ def send_auto_response(contact_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Contact not found")
     # Placeholder for sending email
     return {"message": f"Auto-response sent to {contact.email}"}
+
+
+@app.post("/campaigns/{campaign_id}/run/{contact_id}")
+def run_campaign(
+    campaign_id: int,
+    contact_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    contact = db.get(models.Contact, contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    campaign = (
+        db.query(models.Campaign)
+        .filter(models.Campaign.id == campaign_id)
+        .first()
+    )
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    points = [
+        {
+            "subject": tp.subject,
+            "body": tp.body,
+            "delay_seconds": tp.delay_seconds,
+        }
+        for tp in campaign.touchpoints
+    ]
+    background_tasks.add_task(schedule_campaign, contact.email, points)
+    return {"message": f"Campaign {campaign_id} scheduled for {contact.email}"}
 
 
 @app.get("/emails/gmail")

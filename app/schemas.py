@@ -1,4 +1,4 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from pydantic import BaseModel, EmailStr
 
 
@@ -16,6 +16,39 @@ class ContactCreate(ContactBase):
 
 class Contact(ContactBase):
     id: int
+
+    class Config:
+        orm_mode = True
+
+
+class CampaignTouchpointBase(BaseModel):
+    subject: str
+    body: str
+    delay_seconds: float
+
+
+class CampaignTouchpointCreate(CampaignTouchpointBase):
+    pass
+
+
+class CampaignTouchpoint(CampaignTouchpointBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+class CampaignBase(BaseModel):
+    name: str
+
+
+class CampaignCreate(CampaignBase):
+    touchpoints: List[CampaignTouchpointCreate]
+
+
+class Campaign(CampaignBase):
+    id: int
+    touchpoints: List[CampaignTouchpoint] = []
 
     class Config:
         orm_mode = True
