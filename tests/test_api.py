@@ -93,3 +93,31 @@ def test_auto_responder(client):
     resp = client.post(f"/auto-responder/{contact_id}")
     assert resp.status_code == 200
     assert "Auto-response sent" in resp.json()["message"]
+
+
+def test_gmail_endpoint(client, monkeypatch):
+    sample = [{"subject": "Hello"}]
+    monkeypatch.setenv("GMAIL_USER", "user")
+    monkeypatch.setenv("GMAIL_PASS", "pass")
+    monkeypatch.setattr("app.main.fetch_imap_emails", lambda host, username, password, folder="INBOX", limit=10: sample)
+    resp = client.get("/emails/gmail")
+    assert resp.status_code == 200
+    assert resp.json() == sample
+
+
+def test_proton_endpoint(client, monkeypatch):
+    sample = [{"subject": "Hi"}]
+    monkeypatch.setenv("PROTON_USER", "user")
+    monkeypatch.setenv("PROTON_PASS", "pass")
+    monkeypatch.setattr("app.main.fetch_imap_emails", lambda host, username, password, folder="INBOX", limit=10: sample)
+    resp = client.get("/emails/protonmail")
+    assert resp.status_code == 200
+    assert resp.json() == sample
+
+
+def test_local_email_endpoint(client, monkeypatch):
+    sample = [{"subject": "Local"}]
+    monkeypatch.setattr("app.main.fetch_mailhog_emails", lambda base_url, limit=10: sample)
+    resp = client.get("/emails/local")
+    assert resp.status_code == 200
+    assert resp.json() == sample
