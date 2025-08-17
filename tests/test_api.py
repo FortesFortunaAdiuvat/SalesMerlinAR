@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -121,3 +122,35 @@ def test_local_email_endpoint(client, monkeypatch):
     resp = client.get("/emails/local")
     assert resp.status_code == 200
     assert resp.json() == sample
+
+
+def test_campaign_run(client, monkeypatch):
+    contact = {"name": "Alice", "email": "alice@example.com"}
+    contact_resp = client.post("/contacts", json=contact)
+    contact_id = contact_resp.json()["id"]
+
+    campaign = {
+        "name": "Test", 
+        "touchpoints": [
+            {"subject": "One", "body": "Body1", "delay_seconds": 0},
+            {"subject": "Two", "body": "Body2", "delay_seconds": 0.1},
+        ]
+    }
+    camp_resp = client.post("/campaigns", json=campaign)
+    campaign_id = camp_resp.json()["id"]
+
+    calls = []
+
+    def fake_send_email(to, subject, body):
+        calls.append((subject, time.time()))
+
+    monkeypatch.setattr("app.main.send_email", fake_send_email)
+
+    start = time.time()
+    run_resp = client.post(f"/campaigns/{campaign_id}/run/{contact_id}")
+    assert run_resp.status_code == 200
+
+    time.sleep(0.3)
+
+    assert [c[0] for c in calls] == ["One", "Two"]
+    assert calls[1][1] - calls[0][1] >= 0.09
